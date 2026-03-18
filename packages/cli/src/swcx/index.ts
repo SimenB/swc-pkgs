@@ -4,7 +4,7 @@ import minVersion from "semver/ranges/min-version";
 import { existsSync, readFileSync } from "fs";
 import * as path from "path";
 import { spawn, StdioOptions } from "child_process";
-const { BinWrapper } = require("@xhmikosr/bin-wrapper");
+const { default: BinWrapper } = require("@xhmikosr/bin-wrapper");
 
 const { platform, arch } = process;
 
@@ -86,9 +86,9 @@ const isMusl = () =>
                     return true;
                 }
             } else {
-                const { glibcVersionRuntime } = (
-                    process.report.getReport() as any
-                ).header;
+                const {
+                    glibcVersionRuntime,
+                } = (process.report.getReport() as any).header;
                 return !glibcVersionRuntime;
             }
         }
@@ -141,7 +141,7 @@ const executeBinary = async () => {
 
     await bin.run();
 
-    const binPath = bin.path;
+    const binPath = bin.path();
 
     const [, , ...args] = process.argv;
     const options = { cwd: process.cwd(), stdio: "inherit" as StdioOptions };
