@@ -1,5 +1,11 @@
 # @swc/cli
 
+## 0.8.1
+
+### Patch Changes
+
+- 10cb286: fix(cli): Bump `@xhmikosr/bin-wrapper` to v14 to resolve CVE-2026-31808
+
 ## 0.8.0
 
 ### Minor Changes
