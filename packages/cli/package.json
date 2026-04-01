@@ -56,7 +56,7 @@
         "tinyglobby": "^0.2.13"
     },
     "devDependencies": {
-        "@swc/cli": "0.8.1",
+        "@swc/cli": "0.8.0",
         "@swc/core": "^1.6.4",
         "@swc/jest": "workspace:^",
         "@swc/types": "^0.1.9",
