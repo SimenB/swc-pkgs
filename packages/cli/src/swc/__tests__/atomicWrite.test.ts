@@ -7,6 +7,9 @@ import {
     writeFileAtomicallyIfChangedSync,
 } from "../util";
 
+// Windows has no POSIX permission bits: mode always reads back as 0o666.
+const itPosix = process.platform === "win32" ? it.skip : it;
+
 let dir: string;
 
 beforeEach(() => {
@@ -49,7 +52,7 @@ describe("writeFileAtomicallyIfChanged", () => {
         expect(await tmpFiles()).toEqual([]);
     });
 
-    it("applies the given mode", async () => {
+    itPosix("applies the given mode", async () => {
         const dest = join(dir, "out.js");
         await writeFileAtomicallyIfChanged(dest, "content", { mode: 0o640 });
 
