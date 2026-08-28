@@ -1,4 +1,15 @@
-import { mkdtempSync, promises, readFileSync, rmSync, statSync } from "fs";
+import {
+    chmodSync,
+    lstatSync,
+    mkdirSync,
+    mkdtempSync,
+    promises,
+    readFileSync,
+    rmSync,
+    statSync,
+    symlinkSync,
+    writeFileSync,
+} from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import {
@@ -109,5 +120,73 @@ describe("copyFileAtomicallyIfChanged", () => {
 
         expect(await promises.readFile(dest)).toEqual(changed);
         expect(await tmpFiles()).toEqual([]);
+    });
+});
+
+describe("write-file-atomic behaviour", () => {
+    itPosix("keeps the destination's existing mode", async () => {
+        const dest = join(dir, "out.js");
+        writeFileSync(dest, "old");
+        chmodSync(dest, 0o755);
+
+        await writeFileAtomicallyIfChanged(dest, "new");
+
+        expect(statSync(dest).mode & 0o777).toBe(0o755);
+    });
+
+    itPosix("writes through a symlinked destination", async () => {
+        const target = join(dir, "target.js");
+        const link = join(dir, "link.js");
+        writeFileSync(target, "old");
+        symlinkSync(target, link);
+
+        await writeFileAtomicallyIfChanged(link, "new");
+
+        expect(lstatSync(link).isSymbolicLink()).toBe(true);
+        expect(readFileSync(target, "utf8")).toBe("new");
+    });
+
+    it("leaves no temp file behind when the write fails", async () => {
+        const dest = join(dir, "adir");
+        mkdirSync(dest);
+
+        await expect(
+            writeFileAtomicallyIfChanged(dest, "content")
+        ).rejects.toThrow();
+
+        expect(await tmpFiles()).toEqual([]);
+    });
+
+    it("compares bytes rather than decoded text", async () => {
+        const dest = join(dir, "malformed.js");
+        writeFileSync(dest, Buffer.from([0xff]));
+
+        await writeFileAtomicallyIfChanged(dest, "\uFFFD");
+
+        expect([...readFileSync(dest)]).toEqual([0xef, 0xbf, 0xbd]);
+    });
+
+    it("survives concurrent writes to the same destination", async () => {
+        const dest = join(dir, "out.js");
+
+        await Promise.all([
+            writeFileAtomicallyIfChanged(dest, "a".repeat(100)),
+            writeFileAtomicallyIfChanged(dest, "b".repeat(100)),
+        ]);
+
+        expect(readFileSync(dest, "utf8")).toHaveLength(100);
+        expect(await tmpFiles()).toEqual([]);
+    });
+
+    itPosix("copies when only the source mode changed", async () => {
+        const src = join(dir, "script.sh");
+        const dest = join(dir, "out.sh");
+        writeFileSync(src, "#!/bin/sh\n");
+        await copyFileAtomicallyIfChanged(src, dest);
+
+        chmodSync(src, 0o755);
+        await copyFileAtomicallyIfChanged(src, dest);
+
+        expect(statSync(dest).mode & 0o777).toBe(0o755);
     });
 });
