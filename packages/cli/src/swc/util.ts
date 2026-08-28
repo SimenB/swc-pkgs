@@ -1,6 +1,12 @@
 import * as swc from "@swc/core";
 import slash from "slash";
-import { mkdirSync, writeFileSync, promises } from "fs";
+import {
+    mkdirSync,
+    readFileSync,
+    renameSync,
+    writeFileSync,
+    promises,
+} from "fs";
 import { dirname, extname, join, relative } from "path";
 import { stderr } from "process";
 
@@ -90,10 +96,69 @@ export function outputFile(
         const mapLoc = filename + ".map";
         code +=
             "\n//# sourceMappingURL=" + slash(relative(fileDirName, mapLoc));
-        writeFileSync(mapLoc, output.map);
+        writeFileAtomicallyIfChangedSync(mapLoc, output.map);
     }
 
-    writeFileSync(filename, code);
+    writeFileAtomicallyIfChangedSync(filename, code);
+}
+
+// Watch consumers (bundler child compilers) read these files the moment they
+// change: never truncate-write in place, and skip identical content so a
+// recompile of unchanged sources causes no downstream rebuilds.
+export async function writeFileAtomicallyIfChanged(
+    filename: string,
+    content: string,
+    options?: { mode?: number }
+): Promise<void> {
+    try {
+        if ((await promises.readFile(filename, "utf8")) === content) {
+            return;
+        }
+    } catch {}
+
+    const tmpFile = tmpPathFor(filename);
+    await promises.writeFile(tmpFile, content, options);
+    await promises.rename(tmpFile, filename);
+}
+
+export function writeFileAtomicallyIfChangedSync(
+    filename: string,
+    content: string
+): void {
+    try {
+        if (readFileSync(filename, "utf8") === content) {
+            return;
+        }
+    } catch {}
+
+    const tmpFile = tmpPathFor(filename);
+    writeFileSync(tmpFile, content);
+    renameSync(tmpFile, filename);
+}
+
+export async function copyFileAtomicallyIfChanged(
+    src: string,
+    dest: string
+): Promise<void> {
+    try {
+        const [source, existing] = await Promise.all([
+            promises.readFile(src),
+            promises.readFile(dest),
+        ]);
+        if (source.equals(existing)) {
+            return;
+        }
+    } catch {}
+
+    const tmpDest = tmpPathFor(dest);
+    await promises.copyFile(src, tmpDest);
+    await promises.rename(tmpDest, dest);
+}
+
+// The temporary file must live next to the destination: rename is only atomic
+// within a single filesystem.
+function tmpPathFor(dest: string) {
+    return `${dest}.${process.pid}.tmp`;
 }
 
 export function assertCompilationResult<T>(
