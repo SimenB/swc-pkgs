@@ -2,8 +2,8 @@ import slash from "slash";
 import { promises } from "fs";
 import { dirname, relative } from "path";
 import { transformFile, transformFileSync } from "@swc/core";
-import { writeFileAtomicallyIfChanged } from "./util";
 import type { Options, Output } from "@swc/core";
+import { writeFileAtomicallyIfChanged } from "./util";
 
 const { mkdir, stat } = promises;
 
