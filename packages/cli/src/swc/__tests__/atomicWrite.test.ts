@@ -3,6 +3,7 @@ import {
     lstatSync,
     mkdirSync,
     mkdtempSync,
+    readdirSync,
     promises,
     readFileSync,
     rmSync,
@@ -189,4 +190,42 @@ describe("write-file-atomic behaviour", () => {
 
         expect(statSync(dest).mode & 0o777).toBe(0o755);
     });
+});
+
+describe("copy edge cases", () => {
+    itPosix("copies through a symlinked destination", async () => {
+        const src = join(dir, "src.txt");
+        const target = join(dir, "target.txt");
+        const link = join(dir, "link.txt");
+        writeFileSync(src, "new");
+        writeFileSync(target, "old");
+        symlinkSync(target, link);
+
+        await copyFileAtomicallyIfChanged(src, link);
+
+        expect(lstatSync(link).isSymbolicLink()).toBe(true);
+        expect(readFileSync(target, "utf8")).toBe("new");
+        expect(await tmpFiles()).toEqual([]);
+    });
+
+    itPosix(
+        "closes the source when the destination vanishes mid-compare",
+        async () => {
+            const openFds = () => readdirSync("/dev/fd").length;
+            const before = openFds();
+
+            for (let i = 0; i < 20; i++) {
+                const src = join(dir, `src${i}`);
+                const dest = join(dir, `dest${i}`);
+                writeFileSync(src, "same");
+                writeFileSync(dest, "same");
+
+                const copy = copyFileAtomicallyIfChanged(src, dest);
+                rmSync(dest, { force: true });
+                await copy.catch(() => {});
+            }
+
+            expect(openFds() - before).toBeLessThan(10);
+        }
+    );
 });

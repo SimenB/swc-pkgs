@@ -133,13 +133,17 @@ export async function copyFileAtomicallyIfChanged(
         return;
     }
 
+    // Follow a symlinked destination rather than replacing the link, which is
+    // what copyFile did and what write-file-atomic does for generated output.
+    const target = await promises.realpath(dest).catch(() => dest);
+
     // Copies can be arbitrarily large binaries, so they go through copyFile
     // rather than a buffer. The temporary file must live next to the
     // destination: rename is only atomic within a single filesystem.
-    const tmpDest = `${dest}.${process.pid}.${++copies}.tmp`;
+    const tmpDest = `${target}.${process.pid}.${++copies}.tmp`;
     try {
         await promises.copyFile(src, tmpDest);
-        await promises.rename(tmpDest, dest);
+        await promises.rename(tmpDest, target);
     } catch (err: any) {
         await promises.unlink(tmpDest).catch(() => {});
         throw err;
@@ -183,10 +187,14 @@ async function isSameFile(src: string, dest: string) {
 // the 2 GiB a single buffer holds.
 async function hasSameBytes(src: string, dest: string) {
     const chunkSize = 64 * 1024;
-    const [srcFile, destFile] = await Promise.all([
-        promises.open(src, "r"),
-        promises.open(dest, "r"),
-    ]);
+    const srcFile = await promises.open(src, "r");
+    let destFile;
+    try {
+        destFile = await promises.open(dest, "r");
+    } catch (err: any) {
+        await srcFile.close();
+        throw err;
+    }
 
     try {
         const srcChunk = Buffer.allocUnsafe(chunkSize);
