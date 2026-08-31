@@ -113,6 +113,13 @@ export async function writeFileAtomicallyIfChanged(
     content: string,
     options?: { mode?: number }
 ): Promise<void> {
+    // A FIFO or device such as /dev/null has to be written directly: reading it
+    // can block, and renaming over it would replace the special file.
+    if (!isRegularFile(filename)) {
+        await promises.writeFile(filename, content, options);
+        return;
+    }
+
     if (await hasContent(filename, content)) {
         return;
     }
@@ -211,12 +218,20 @@ async function resolveLink(dest: string) {
         return await promises.realpath(dest);
     } catch {}
 
-    try {
-        const link = await promises.readlink(dest);
-        return resolve(dirname(dest), link);
-    } catch {
-        return dest;
+    // realpath only fails once the chain ends somewhere that does not exist.
+    // Walk the rest of it by hand, as a plain write would have.
+    let target = dest;
+    for (let hop = 0; hop < maxLinkDepth; hop++) {
+        let link;
+        try {
+            link = await promises.readlink(target);
+        } catch {
+            return target;
+        }
+        target = resolve(dirname(target), link);
     }
+
+    throw tooManyLinks(dest);
 }
 
 function resolveLinkSync(dest: string) {
@@ -224,11 +239,29 @@ function resolveLinkSync(dest: string) {
         return realpathSync(dest);
     } catch {}
 
-    try {
-        return resolve(dirname(dest), readlinkSync(dest));
-    } catch {
-        return dest;
+    let target = dest;
+    for (let hop = 0; hop < maxLinkDepth; hop++) {
+        let link;
+        try {
+            link = readlinkSync(target);
+        } catch {
+            return target;
+        }
+        target = resolve(dirname(target), link);
     }
+
+    throw tooManyLinks(dest);
+}
+
+const maxLinkDepth = 40;
+
+// A chain this long is a loop in practice. A plain write reported ELOOP and
+// left the link alone, and renaming over it silently would not.
+function tooManyLinks(dest: string) {
+    return Object.assign(
+        new Error(`ELOOP: too many symbolic links encountered, open '${dest}'`),
+        { code: "ELOOP", path: dest }
+    );
 }
 
 async function hasContent(filename: string, content: string) {

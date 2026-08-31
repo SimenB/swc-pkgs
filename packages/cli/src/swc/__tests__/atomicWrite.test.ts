@@ -328,3 +328,60 @@ describe("unusual destinations", () => {
         expect(statSync("/dev/null").isCharacterDevice()).toBe(true);
     });
 });
+
+describe("symlink chains", () => {
+    const chain = (name: string) => {
+        const target = join(dir, `${name}-target`);
+        const middle = join(dir, `${name}-middle`);
+        const top = join(dir, `${name}-top`);
+        symlinkSync(target, middle);
+        symlinkSync(middle, top);
+        return { target, middle, top };
+    };
+
+    const loop = (name: string) => {
+        const first = join(dir, `${name}-first`);
+        const second = join(dir, `${name}-second`);
+        symlinkSync(second, first);
+        symlinkSync(first, second);
+        return first;
+    };
+
+    itPosix("writes through a chain of dangling links", async () => {
+        const { target, middle, top } = chain("write");
+
+        await writeFileAtomicallyIfChanged(top, "content");
+
+        expect(lstatSync(middle).isSymbolicLink()).toBe(true);
+        expect(readFileSync(target, "utf8")).toBe("content");
+    });
+
+    itPosix("writes through a chain synchronously", () => {
+        const { target, middle, top } = chain("sync");
+
+        writeFileAtomicallyIfChangedSync(top, "content");
+
+        expect(lstatSync(middle).isSymbolicLink()).toBe(true);
+        expect(readFileSync(target, "utf8")).toBe("content");
+    });
+
+    itPosix("copies through a chain of dangling links", async () => {
+        const src = join(dir, "src.txt");
+        writeFileSync(src, "content");
+        const { target, middle, top } = chain("copy");
+
+        await copyFileAtomicallyIfChanged(src, top);
+
+        expect(lstatSync(middle).isSymbolicLink()).toBe(true);
+        expect(readFileSync(target, "utf8")).toBe("content");
+    });
+
+    itPosix("reports a link loop instead of replacing the link", async () => {
+        const first = loop("write");
+
+        await expect(
+            writeFileAtomicallyIfChanged(first, "content")
+        ).rejects.toMatchObject({ code: "ELOOP" });
+        expect(lstatSync(first).isSymbolicLink()).toBe(true);
+    });
+});
