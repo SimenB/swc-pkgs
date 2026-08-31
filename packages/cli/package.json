@@ -3,6 +3,7 @@
     "version": "0.8.1",
     "description": "CLI for the swc project",
     "main": "lib/swc/index.js",
+    "types": "lib/swc/index.d.ts",
     "scripts": {
         "prepublishOnly": "pnpm build",
         "types": "tsc",
@@ -81,6 +82,8 @@
     },
     "files": [
         "bin",
-        "lib"
+        "lib",
+        "!lib/**/__tests__",
+        "!lib/**/__mocks__"
     ]
 }

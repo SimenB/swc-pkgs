@@ -10,6 +10,7 @@
         "noFallthroughCasesInSwitch": true,
         "esModuleInterop": true,
         "lib": ["ES2019.Array", "ES2020.Promise", "ES2015"],
+        "declaration": true,
         "outDir": "./lib"
     },
     "include": ["src"]
