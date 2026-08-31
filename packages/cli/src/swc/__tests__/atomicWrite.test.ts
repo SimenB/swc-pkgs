@@ -231,6 +231,28 @@ describe("copy edge cases", () => {
 });
 
 describe("unusual destinations", () => {
+    itPosix("writes through a dangling symlink", async () => {
+        const target = join(dir, "not-yet.js");
+        const link = join(dir, "link.js");
+        symlinkSync(target, link);
+
+        await writeFileAtomicallyIfChanged(link, "content");
+
+        expect(lstatSync(link).isSymbolicLink()).toBe(true);
+        expect(readFileSync(target, "utf8")).toBe("content");
+    });
+
+    itPosix("writes through a dangling symlink synchronously", () => {
+        const target = join(dir, "not-yet-sync.js");
+        const link = join(dir, "link-sync.js");
+        symlinkSync(target, link);
+
+        writeFileAtomicallyIfChangedSync(link, "content");
+
+        expect(lstatSync(link).isSymbolicLink()).toBe(true);
+        expect(readFileSync(target, "utf8")).toBe("content");
+    });
+
     itPosix("copies through a dangling symlink", async () => {
         const src = join(dir, "src.txt");
         const target = join(dir, "not-yet.txt");

@@ -1,7 +1,15 @@
 import * as swc from "@swc/core";
 import slash from "slash";
 import writeFileAtomic from "write-file-atomic";
-import { mkdirSync, readFileSync, statSync, writeFileSync, promises } from "fs";
+import {
+    mkdirSync,
+    readFileSync,
+    readlinkSync,
+    realpathSync,
+    statSync,
+    writeFileSync,
+    promises,
+} from "fs";
 import { dirname, extname, join, relative, resolve } from "path";
 import { stderr } from "process";
 
@@ -109,7 +117,12 @@ export async function writeFileAtomicallyIfChanged(
         return;
     }
 
-    await writeFileAtomic(filename, content, { ...options, fsync: false });
+    // write-file-atomic follows a symlinked destination, but falls back to the
+    // link itself when the target does not exist yet. Resolve that case here so
+    // a dangling link keeps pointing at a file the write creates.
+    const target = await resolveLink(filename);
+
+    await writeFileAtomic(target, content, { ...options, fsync: false });
 }
 
 export function writeFileAtomicallyIfChangedSync(
@@ -129,7 +142,7 @@ export function writeFileAtomicallyIfChangedSync(
         }
     } catch {}
 
-    writeFileAtomic.sync(filename, content, { fsync: false });
+    writeFileAtomic.sync(resolveLinkSync(filename), content, { fsync: false });
 }
 
 function isRegularFile(filename: string) {
@@ -183,6 +196,18 @@ async function resolveLink(dest: string) {
     try {
         const link = await promises.readlink(dest);
         return resolve(dirname(dest), link);
+    } catch {
+        return dest;
+    }
+}
+
+function resolveLinkSync(dest: string) {
+    try {
+        return realpathSync(dest);
+    } catch {}
+
+    try {
+        return resolve(dirname(dest), readlinkSync(dest));
     } catch {
         return dest;
     }
