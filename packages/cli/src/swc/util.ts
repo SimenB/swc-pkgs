@@ -1,8 +1,8 @@
 import * as swc from "@swc/core";
 import slash from "slash";
 import writeFileAtomic from "write-file-atomic";
-import { mkdirSync, readFileSync, promises } from "fs";
-import { dirname, extname, join, relative } from "path";
+import { mkdirSync, readFileSync, statSync, writeFileSync, promises } from "fs";
+import { dirname, extname, join, relative, resolve } from "path";
 import { stderr } from "process";
 
 export async function exists(path: string): Promise<boolean> {
@@ -116,6 +116,13 @@ export function writeFileAtomicallyIfChangedSync(
     filename: string,
     content: string
 ): void {
+    // A FIFO or device such as /dev/null has to be written directly: reading it
+    // can block, and renaming over it would replace the special file.
+    if (!isRegularFile(filename)) {
+        writeFileSync(filename, content);
+        return;
+    }
+
     try {
         if (readFileSync(filename).equals(Buffer.from(content))) {
             return;
@@ -123,6 +130,15 @@ export function writeFileAtomicallyIfChangedSync(
     } catch {}
 
     writeFileAtomic.sync(filename, content, { fsync: false });
+}
+
+function isRegularFile(filename: string) {
+    try {
+        return statSync(filename).isFile();
+    } catch {
+        // A destination that does not exist yet is created as a regular file.
+        return true;
+    }
 }
 
 export async function copyFileAtomicallyIfChanged(
@@ -133,14 +149,17 @@ export async function copyFileAtomicallyIfChanged(
         return;
     }
 
-    // Follow a symlinked destination rather than replacing the link, which is
-    // what copyFile did and what write-file-atomic does for generated output.
-    const target = await promises.realpath(dest).catch(() => dest);
+    const target = await resolveLink(dest);
 
     // Copies can be arbitrarily large binaries, so they go through copyFile
     // rather than a buffer. The temporary file must live next to the
-    // destination: rename is only atomic within a single filesystem.
-    const tmpDest = `${target}.${process.pid}.${++copies}.tmp`;
+    // destination: rename is only atomic within a single filesystem. Its name
+    // does not extend the destination's, which can already be at the length a
+    // single path component allows.
+    const tmpDest = join(
+        dirname(target),
+        `.swc-${process.pid}-${++copies}.tmp`
+    );
     try {
         await promises.copyFile(src, tmpDest);
         await promises.rename(tmpDest, target);
@@ -151,6 +170,23 @@ export async function copyFileAtomicallyIfChanged(
 }
 
 let copies = 0;
+
+// Follow a symlinked destination rather than replacing the link, which is what
+// copyFile did and what write-file-atomic does for generated output. realpath
+// rejects on a link whose target does not exist yet, so fall back to the link
+// text, which copyFile would have created.
+async function resolveLink(dest: string) {
+    try {
+        return await promises.realpath(dest);
+    } catch {}
+
+    try {
+        const link = await promises.readlink(dest);
+        return resolve(dirname(dest), link);
+    } catch {
+        return dest;
+    }
+}
 
 async function hasContent(filename: string, content: string) {
     try {

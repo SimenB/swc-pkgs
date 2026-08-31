@@ -229,3 +229,35 @@ describe("copy edge cases", () => {
         }
     );
 });
+
+describe("unusual destinations", () => {
+    itPosix("copies through a dangling symlink", async () => {
+        const src = join(dir, "src.txt");
+        const target = join(dir, "not-yet.txt");
+        const link = join(dir, "link.txt");
+        writeFileSync(src, "payload");
+        symlinkSync(target, link);
+
+        await copyFileAtomicallyIfChanged(src, link);
+
+        expect(lstatSync(link).isSymbolicLink()).toBe(true);
+        expect(readFileSync(target, "utf8")).toBe("payload");
+    });
+
+    it("copies to a destination whose name fills a path component", async () => {
+        const src = join(dir, "src.txt");
+        const dest = join(dir, `${"z".repeat(250)}.txt`);
+        writeFileSync(src, "payload");
+
+        await copyFileAtomicallyIfChanged(src, dest);
+
+        expect(readFileSync(dest, "utf8")).toBe("payload");
+        expect(await tmpFiles()).toEqual([]);
+    });
+
+    itPosix("writes directly to a non-regular destination", () => {
+        writeFileAtomicallyIfChangedSync("/dev/null", "payload");
+
+        expect(statSync("/dev/null").isCharacterDevice()).toBe(true);
+    });
+});
