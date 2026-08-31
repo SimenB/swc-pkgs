@@ -21,6 +21,9 @@ import {
 
 // Windows has no POSIX permission bits: mode always reads back as 0o666.
 const itPosix = process.platform === "win32" ? it.skip : it;
+// Permission bits do not constrain root, so those cases cannot be exercised.
+const itUnprivileged =
+    process.platform === "win32" || process.getuid?.() === 0 ? it.skip : it;
 
 let dir: string;
 
@@ -276,6 +279,48 @@ describe("unusual destinations", () => {
         expect(readFileSync(dest, "utf8")).toBe("payload");
         expect(await tmpFiles()).toEqual([]);
     });
+
+    itUnprivileged(
+        "writes when the directory cannot host a temp file",
+        async () => {
+            const locked = join(dir, "locked");
+            const dest = join(locked, "out.js");
+            mkdirSync(locked);
+            writeFileSync(dest, "old");
+            chmodSync(dest, 0o666);
+            chmodSync(locked, 0o555);
+
+            try {
+                await writeFileAtomicallyIfChanged(dest, "async");
+                expect(readFileSync(dest, "utf8")).toBe("async");
+
+                writeFileAtomicallyIfChangedSync(dest, "sync");
+                expect(readFileSync(dest, "utf8")).toBe("sync");
+            } finally {
+                chmodSync(locked, 0o755);
+            }
+        }
+    );
+
+    itUnprivileged(
+        "still fails when the destination itself is read only",
+        async () => {
+            const locked = join(dir, "read-only");
+            const dest = join(locked, "out.js");
+            mkdirSync(locked);
+            writeFileSync(dest, "old");
+            chmodSync(dest, 0o444);
+            chmodSync(locked, 0o555);
+
+            try {
+                await expect(
+                    writeFileAtomicallyIfChanged(dest, "new")
+                ).rejects.toThrow();
+            } finally {
+                chmodSync(locked, 0o755);
+            }
+        }
+    );
 
     itPosix("writes directly to a non-regular destination", () => {
         writeFileAtomicallyIfChangedSync("/dev/null", "payload");

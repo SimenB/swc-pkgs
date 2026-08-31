@@ -122,7 +122,16 @@ export async function writeFileAtomicallyIfChanged(
     // a dangling link keeps pointing at a file the write creates.
     const target = await resolveLink(filename);
 
-    await writeFileAtomic(target, content, { ...options, fsync: false });
+    try {
+        await writeFileAtomic(target, content, { ...options, fsync: false });
+    } catch (err: any) {
+        // An output directory that does not allow new files cannot host the
+        // temporary file, but the output itself may still be writable.
+        if (err.code !== "EACCES") {
+            throw err;
+        }
+        await promises.writeFile(target, content, options);
+    }
 }
 
 export function writeFileAtomicallyIfChangedSync(
@@ -142,7 +151,16 @@ export function writeFileAtomicallyIfChangedSync(
         }
     } catch {}
 
-    writeFileAtomic.sync(resolveLinkSync(filename), content, { fsync: false });
+    const target = resolveLinkSync(filename);
+
+    try {
+        writeFileAtomic.sync(target, content, { fsync: false });
+    } catch (err: any) {
+        if (err.code !== "EACCES") {
+            throw err;
+        }
+        writeFileSync(target, content);
+    }
 }
 
 function isRegularFile(filename: string) {
